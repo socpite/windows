@@ -10,13 +10,18 @@ ARG DEBCONF_NONINTERACTIVE_SEEN="true"
 RUN set -eu && \
     apt-get update && \
     apt-get --no-install-recommends -y install \
-        wsdd \
+	python-is-python3 \
+	python3-tk \
+	xvfb \
+	scrot \
+        wsdd2 \
         samba \
         wimtools \
         dos2unix \
         cabextract \
         libxml2-utils \
         libarchive-tools \
+	pip \
         netcat-openbsd && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -35,7 +40,7 @@ RUN echo "$VERSION_ARG" > /run/version
 VOLUME /storage
 EXPOSE 3389 8006
 
-ENV VERSION="11"
+ENV VERSION="https://archive.org/download/tiny-11-NTDEV/tiny11%2023H2%20x64.iso"
 ENV RAM_SIZE="4G"
 ENV CPU_CORES="2"
 ENV DISK_SIZE="64G"

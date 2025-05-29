@@ -21,6 +21,7 @@ cd /run
 . proc.sh       # Initialize processor
 . power.sh      # Configure shutdown
 . config.sh     # Configure arguments
+. autogui.sh    # Configure stuff for HUD
 
 trap - ERR
 
