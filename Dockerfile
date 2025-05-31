@@ -26,6 +26,9 @@ RUN set -eu && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+RUN mkdir -p /hud_controller/src
+COPY --chmod=755 ./src/hud_controller /hud_controller/src/hud_controller 
+COPY --chmod=755 ./pyproject.toml /hud_controller/pyproject.toml
 COPY --chmod=755 ./src /run/
 COPY --chmod=755 ./assets /run/assets
 
@@ -44,5 +47,7 @@ ENV VERSION="https://archive.org/download/tiny-11-NTDEV/tiny11%2023H2%20x64.iso"
 ENV RAM_SIZE="4G"
 ENV CPU_CORES="2"
 ENV DISK_SIZE="64G"
+
+RUN pip install -e /hud_controller --break-system-packages
 
 ENTRYPOINT ["/usr/bin/tini", "-s", "/run/entry.sh"]

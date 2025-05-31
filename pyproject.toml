@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hud_controller"
+version = "0.1.0"
+description = "A controller for a qemu based environment for general purpose OS task"
+authors = [
+    {name = "hud team", email = "founders@hud.so"}
+]
+requires-python = ">=3.10"
+dependencies = [
+]
