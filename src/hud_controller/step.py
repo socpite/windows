@@ -7,3 +7,6 @@ def step(actions: list[dict[str, Any]]) -> Any:
     print(qmp.execute_action_list(actions))
 
     return {"observation": {"screenshot": qmp.screenshot()}}
+
+def setup() -> None:
+    pass

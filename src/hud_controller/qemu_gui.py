@@ -10,6 +10,50 @@ SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720  # Default screen size, can be adjusted as needed
 
 
+KEYMAP = {
+    "enter": "ret",
+    "win": "meta_l",
+    "escape": "esc",
+    ' ': 'spc',
+    '\n': 'ret',
+    '\t': 'tab',
+    '-': 'minus',
+    '=': 'equal',
+    '[': 'bracket_left',
+    ']': 'bracket_right',
+    '\\': 'backslash',
+    ';': 'semicolon',
+    "'": 'apostrophe',
+    '`': 'grave_accent',
+    ',': 'comma',
+    '.': 'dot',
+    '/': 'slash',
+}
+
+shift_char_map = {
+    '!': '1',     # Shift + 1
+    '@': '2',     # Shift + 2
+    '#': '3',     # Shift + 3
+    '$': '4',     # Shift + 4
+    '%': '5',     # Shift + 5
+    '^': '6',     # Shift + 6
+    '&': '7',     # Shift + 7
+    '*': '8',     # Shift + 8
+    '(': '9',     # Shift + 9
+    ')': '0',     # Shift + 0
+    '_': 'minus', # Shift + -
+    '+': 'equal', # Shift + =
+    '{': 'bracket_left',   # Shift + [
+    '}': 'bracket_right',  # Shift + ]
+    '|': 'backslash',      # Shift + \
+    ':': 'semicolon',      # Shift + ;
+    '"': 'apostrophe',     # Shift + '
+    '~': 'grave_accent',   # Shift + `
+    '<': 'comma',          # Shift + ,
+    '>': 'dot',            # Shift + .
+    '?': 'slash',          # Shift + /
+}
+
 class QMPClient:
     def __init__(self, path: str):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -45,6 +89,10 @@ class QMPClient:
             msg["arguments"] = arguments
         return self._cmd(msg)
 
+    def _convert(self, key: str) -> str:
+        """Convert a key to its QMP representation."""
+        return KEYMAP.get(key, key)
+
     def get_devices(self) -> dict[str, Any]:
         """Get a list of devices from the QMP server."""
         return self.execute("query-mice")
@@ -58,7 +106,7 @@ class QMPClient:
                     {
                         "type": "key",
                         "down": True,
-                        "key": key
+                        "key": self._convert(key)
                     } for key in cla_action.get("keys", [])
                 ],
             },
@@ -72,8 +120,10 @@ class QMPClient:
                 "events": [
                     {
                         "type": "key",
-                        "down": False,
-                        "key": key
+                        "data": {
+                            "down": False,
+                            "key": self._convert(key)
+                        }
                     } for key in cla_action.get("keys", [])
                 ],
             },
@@ -91,45 +141,58 @@ class QMPClient:
         pre_events = [{ "type": "abs", "data" : { "axis": "x", "value" : point.get("x") } },
                 { "type": "abs", "data" : { "axis": "y", "value" : point.get("y") } } ]
 
-        BUTTON_NAME_MAP={"foward": "side", "back": "extra"}
+        BUTTON_NAME_MAP={"forward": "side", "back": "extra"}
         button = BUTTON_NAME_MAP.get(button, button)
 
         if hold_keys:
-            pre_events += [{ "type": "key", "down": True, "key": key } for key in hold_keys]
+            pre_events += [{ "type": "key", "data":{"down": True, "key": self._convert(key) }} for key in hold_keys]
 
         responses.append(self._cmd({
             "execute": "input-send-event",
             "arguments": {"events": pre_events},
         }))
 
-        click_cmd = {
-            "execute": "input-send-event",
-            "arguments": {
-                "events": [
-                    {
-                        "type": "button",
-                        "down": True,
-                        "button": button
-                    },
-                    {
-                        "type": "button",
-                        "down": False,
-                        "button": button
-                    }
-                ]
-            }
-        }
+        def send_click() -> None:
+            responses.append(self._cmd({
+                "execute": "input-send-event",
+                "arguments": {
+                    "events": [
+                        {
+                            "type": "btn",
+                            "data": {
+                                "down": True,
+                                "button": button
+                            }
+                        },
+                    ]
+                }}))
+            time.sleep(0.05)
+            responses.append(self._cmd({
+                "execute": "input-send-event",
+                "arguments": {
+                    "events": [
+                        {
+                            "type": "btn",
+                            "data": {
+                                "down": False,
+                                "button": button
+                            }
+                        }
+                    ]
+                }
+            }))
+
         if pattern and len(pattern) > 0:
-            responses.append(self._cmd(click_cmd))
+            send_click()
             for delay in pattern:
                 time.sleep(delay/1000.0)
-                responses.append(self._cmd(click_cmd))
+                send_click()
         else:
-            responses.append(self._cmd(click_cmd))
+            send_click()
 
         post_events = []
         if hold_keys:
-            post_events += [{ "type": "key", "down": False, "key": key } for key in hold_keys]
+            post_events += [{ "type": "key", "data": {"down": False, "key": self._convert(key)} } for key in hold_keys]
 
         responses.append(self._cmd({
             "execute": "input-send-event",
@@ -137,6 +200,31 @@ class QMPClient:
         }))
 
         return {"responses": responses}
+
+    def _send_key(self, key: str) -> dict[str, Any]:
+        if key in shift_char_map or key.isupper():
+            return self._cmd({
+                "execute": "input-send-event",
+                "arguments": {
+                    "events": [
+                        {"type": "key", "data": {"down": True, "key": {"type":"qcode", "data": self._convert("shift")}}},
+                        {"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": self._convert(key.lower())}}},
+                        {"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": self._convert(key.lower())}}},
+                        {"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": self._convert("shift")}}},
+                    ]
+                }
+            })
+        else:
+            return self._cmd({
+                "execute": "input-send-event",
+                "arguments": {
+                    "events": [
+                        {"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": self._convert(key)}}},
+                        {"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": self._convert(key)}}},
+                    ]
+                }
+            })
+
     def _execute_press(self, cla_action: dict[str, Any]) -> dict[str, Any]:
         """Send a key press event to the QMP server."""
         keys = cla_action.get("keys")
@@ -147,21 +235,21 @@ class QMPClient:
         return self._cmd({
             "execute": "send-key",
             "arguments": {
-                "keys": [{"type": "qcode", "data": key} for key in keys]
+                "keys": [{"type": "qcode", "data": self._convert(key)} for key in keys]
             }
         })
+        
     def _execute_type(self, cla_action: dict[str, Any]) -> dict[str, Any]:
         """Send a type event to the QMP server."""
         text = cla_action.get("text")
         if not text:
             raise ValueError("No text specified for type action.")
 
-        return self._cmd({
-            "execute": "send-keys",
-            "arguments": {
-                "keys": [{"type": "qcode", "data": char} for char in text]
-            }
-        })
+        responses = []
+        for char in text:
+           responses.append(self._send_key(char)) 
+        return {"responses": responses}
+
     def _execute_scroll(self, cla_action: dict[str, Any]) -> dict[str, Any]:
         """Send a scroll event to the QMP server."""
         point = cla_action.get("point")
@@ -175,7 +263,7 @@ class QMPClient:
             raise ValueError("No scroll specified for scroll action.")
 
         if hold_keys:
-            pre_events += [{"type": "key", "down": True, "key": key} for key in hold_keys]
+            pre_events += [{"type": "key","data":{"down": True, "key": self._convert(key)}} for key in hold_keys]
 
         if point:
             pre_events += [
@@ -219,7 +307,7 @@ class QMPClient:
         post_events = []
 
         if hold_keys:
-            post_events += [{"type": "key", "down": False, "key": key} for key in hold_keys]
+            post_events += [{"type": "key", "data":{"down": False, "key": self._convert(key)}} for key in hold_keys]
 
         responses.append(self._cmd({
             "execute": "input-send-event",
@@ -292,9 +380,9 @@ class QMPClient:
 
         # Execute key down commands if hold_keys is specified
         if hold_keys:
-            pre_events += [{"type": "key", "down": True, "key": key} for key in hold_keys]
+            pre_events += [{"type": "key","data": {"down": True, "key": self._convert(key)}} for key in hold_keys]
 
-        pre_events.append({"type": "button", "down": True, "button": "left"})
+        pre_events.append({"type": "btn", "data": {"down": True, "button": "left"}})
         responses.append(self._cmd({
             "execute": "input-send-event",
             "arguments": {"events": pre_events},
@@ -311,9 +399,9 @@ class QMPClient:
             for point in path[1:]:
                 responses.append(_move_cmd(point))
 
-        post_events = [{"type": "button", "down": False, "button": "left"}]
+        post_events = [{"type": "btn", "data": {"down": False, "button": "left"}}]
         if hold_keys:
-            post_events += [{"type": "key", "down": False, "key": key} for key in hold_keys]
+            post_events += [{"type": "key", "data": {"down": False, "key": self._convert(key)}} for key in hold_keys]
 
         responses.append(self._cmd({
             "execute": "input-send-event",
@@ -327,6 +415,8 @@ class QMPClient:
         action_type = cla_action.get("type")
         if not action_type:
             raise ValueError("Action must have a 'type' field")
+        if action_type == "screenshot":
+            return {}
 
         method_name = f"_execute_{action_type}"
         method = getattr(self, method_name, None)
@@ -384,4 +474,7 @@ if __name__ == "__main__":
     qmp = QMPClient("/tmp/qmp-sock")
 
     # example: send Ctrl+Alt+Del into the guest
-    print(qmp.execute_action_list([{"type": "move", "point": {"x": SCREEN_WIDTH//2, "y": SCREEN_HEIGHT//2}},]))
+    print(qmp._cmd({
+  "execute": "input-set-pointer",
+  "arguments": {"index": 2}
+}))
